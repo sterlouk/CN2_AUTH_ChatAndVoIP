@@ -1,9 +1,11 @@
 package com.cn2.communication;
-
+import javax.sound.sampled.*; 
+import java.util.Calendar; // MINE
 import java.io.*;
 import java.net.*;
 
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;//MINE
 import javax.swing.JTextField;
 import javax.swing.JButton;
 import javax.swing.JTextArea;
@@ -17,10 +19,7 @@ import java.awt.Color;
 import java.lang.Thread;
 
 public class App extends Frame implements WindowListener, ActionListener {
-
-	/*
-	 * Definition of the app's fields
-	 */
+	
 	static TextField inputTextField;		
 	static JTextArea textArea;				 
 	static JFrame frame;					
@@ -29,19 +28,21 @@ public class App extends Frame implements WindowListener, ActionListener {
 	public static Color gray;				
 	final static String newline="\n";		
 	static JButton callButton;				
+	static JButton closeCallButton;
+	static JButton deafenButton;
+	static JButton muteButton;
+	static boolean close;
+	static boolean deafen;
+	static boolean mute;
+	static String friend;
+	static int getMessPort;
+	static int getCallPort;
+	static int sendMessPort;
+	static int sendCallPort;
 	
-	// TODO: Please define and initialize your variables here...
-	
-	/**
-	 * Construct the app's frame and initialize important parameters
-	 */
 	public App(String title) {
 		
-		/*
-		 * 1. Defining the components of the GUI
-		 */
-		
-		// Setting up the characteristics of the frame
+
 		super(title);									
 		gray = new Color(254, 254, 254);		
 		setBackground(gray);
@@ -61,7 +62,11 @@ public class App extends Frame implements WindowListener, ActionListener {
 		
 		//Setting up the buttons
 		sendButton = new JButton("Send");			
-		callButton = new JButton("Call");			
+		callButton = new JButton("Call");
+		closeCallButton = new JButton("Close call");
+		deafenButton = new JButton("Deafen");
+		muteButton = new JButton("Mute");
+		
 						
 		/*
 		 * 2. Adding the components to the GUI
@@ -70,76 +75,182 @@ public class App extends Frame implements WindowListener, ActionListener {
 		add(inputTextField);
 		add(sendButton);
 		add(callButton);
-		
+		add(closeCallButton);
+		add(deafenButton);
+		add(muteButton);
 		/*
 		 * 3. Linking the buttons to the ActionListener
 		 */
 		sendButton.addActionListener(this);			
 		callButton.addActionListener(this);	
-
+		closeCallButton.addActionListener(this);
+		deafenButton.addActionListener(this);
+		muteButton.addActionListener(this);
+		
 		
 	}
 	
-	/**
-	 * The main method of the application. It continuously listens for
-	 * new messages.
-	 */
-	public static void main(String[] args){
-	
-		/*
-		 * 1. Create the app's window
-		 */
-		App app = new App("CN2 - AUTH");  // TODO: You can add the title that will displayed on the Window of the App here																		  
+
+	public static void main(String[] args) {
+		
+
+		App app = new App("****OUR CHAT****");  // TODO: You can add the title that will displayed on the Window of the App here																		  
 		app.setSize(500,250);				  
 		app.setVisible(true);				  
-
-		/*
-		 * 2. 
-		 */
-		do{		
-			// TODO: Your code goes here...
-		}while(true);
+		
+		friend = JOptionPane.showInputDialog("Enter the IP of your friend: ");
+		//PORTS:
+		sendMessPort = Integer.parseInt(JOptionPane.showInputDialog("Choose message destination port: "));
+		getMessPort = Integer.parseInt(JOptionPane.showInputDialog("Choose your message receiving port: "));
+		sendCallPort = Integer.parseInt(JOptionPane.showInputDialog("Choose sound destination port: "));
+		getCallPort = Integer.parseInt(JOptionPane.showInputDialog("Choose your sound receiving port: "));
+		
+		
+		startReceivingMessages();
+		
 	}
 	
-	/**
-	 * The method that corresponds to the Action Listener. Whenever an action is performed
-	 * (i.e., one of the buttons is clicked) this method is executed. 
-	 */
+	
+	static public void startSendingMessages() {
+		new Thread(() -> {
+			String message = inputTextField.getText();
+			if(!message.isEmpty()) {
+				try {
+					DatagramSocket sendSocket = new DatagramSocket(); //socket for sending 
+					byte[] buffer =  message.getBytes(); //reverse function from receiving socket
+					InetAddress recipientAddress = InetAddress.getByName(friend);
+					DatagramPacket packet = new DatagramPacket(buffer, buffer.length, recipientAddress, sendMessPort);
+					
+					Calendar currentTime = Calendar.getInstance();
+					sendSocket.send(packet);
+					sendSocket.close();
+					inputTextField.setText("");
+					textArea.append("Message sent: " + message + "\t" + "@: " + currentTime.getTime() + "\n");
+					
+				} catch (IOException ex) {
+					
+					ex.printStackTrace();
+					System.out.println("Problem with message sending port");
+				} 
+		}
+	}).start();
+	}
+	
+	static public void startReceivingMessages() {
+		
+		new Thread(() -> {
+			
+			try {
+				DatagramSocket socket = new DatagramSocket(getMessPort); // socket for receiving messages
+				byte[] buffer = new byte[500]; //make a buffer with 500 bytes capacity for incoming messages
+				DatagramPacket packet = new DatagramPacket(buffer, buffer.length); // packet === buffer content (inc message) 
+			
+				while(true) {
+					socket.receive(packet);
+					String message = new String(packet.getData(), 0, packet.getLength());
+					Calendar currentTime = Calendar.getInstance();
+					textArea.append("Message received: " + message + "\t" + "@: " + currentTime.getTime() + "\n");
+				}
+		 
+		}catch(IOException e) {
+			e.printStackTrace();
+			System.out.println("Problem with message receiving port");
+		}
+		
+	}).start();
+	}
+	
+	static public void outgoingSound() {
+		new Thread(() -> {
+			try {
+				AudioFormat format = new AudioFormat(16000, 16, 1, true, true);
+				TargetDataLine mic = AudioSystem.getTargetDataLine(format); 
+				mic.open(format);
+				mic.start();
+				
+				DatagramSocket socket = new DatagramSocket(); // socket for sending sound
+				byte[] sendBuffer = new byte[1024]; //adjust for better quality
+				InetAddress recepientIp =  InetAddress.getByName(friend);
+				//DatagramPacket sendPacket = new DatagramPacket(sendBuffer, sendBuffer.length);
+				//byte[] outgoingSound = sendPacket.getData();
+					
+				
+				while(!mute) {
+						int bytesInBuffer = mic.read(sendBuffer, 0, sendBuffer.length);
+						DatagramPacket sendPacket = new DatagramPacket(sendBuffer, bytesInBuffer, recepientIp, sendCallPort);
+						socket.send(sendPacket);
+				}
+				
+				
+			} catch (IOException e) {
+				e.printStackTrace();
+				System.out.println("Problem with sound receiving port");
+			} catch (LineUnavailableException e) {
+				e.printStackTrace();
+				System.out.println("Line unavailable");
+			}
+		}).start();
+	}
+	
+	static public void incomingSound() {
+		new Thread(() -> {
+			try {
+				AudioFormat format = new AudioFormat(16000, 16, 1, true, true);
+				SourceDataLine speaker = AudioSystem.getSourceDataLine(format);
+				speaker.open(format);
+				speaker.start();
+				
+				DatagramSocket receiveSocket = new DatagramSocket(getCallPort); //receive sound
+				byte[] receiveBuffer = new byte[1024];
+				DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);//link buffer to packet , packet wraps buffer
+				
+				while(!deafen) {
+					receiveSocket.receive(receivePacket);//copy data from packet (buffer is inside packet)
+					speaker.write(receivePacket.getData(), 0, receivePacket.getLength());
+					
+				}
+				
+			}  catch (LineUnavailableException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} 
+		}).start();	
+	}
+	
 	@Override
 	public void actionPerformed(ActionEvent e) {
 		
 	
-
-		/*
-		 * Check which button was clicked.
-		 */
 		if (e.getSource() == sendButton){
 			
-			// The "Send" button was clicked
-			
-			// TODO: Your code goes here...
-		
-			
-		}else if(e.getSource() == callButton){
-			
-			// The "Call" button was clicked
-			
-			// TODO: Your code goes here...
-			
-			
+			startSendingMessages();
+				
+			}
+		else if(e.getSource() == callButton){
+			deafen = false;
+			mute = false;
+			outgoingSound();
+			incomingSound();
 		}
-			
+		if(e.getSource() == closeCallButton) {
+			deafen = true;
+			mute = true;
+		}
+		if(e.getSource() == deafenButton) {
+			deafen = true;
+		}
+		if(e.getSource() == muteButton) {
+			mute = true;
+		}
 
 	}
 
-	/**
-	 * These methods have to do with the GUI. You can use them if you wish to define
-	 * what the program should do in specific scenarios (e.g., when closing the 
-	 * window).
-	 */
 	@Override
 	public void windowActivated(WindowEvent e) {
 		// TODO Auto-generated method stub	
+		
 	}
 
 	@Override
@@ -173,4 +284,5 @@ public class App extends Frame implements WindowListener, ActionListener {
 	public void windowOpened(WindowEvent e) {
 		// TODO Auto-generated method stub	
 	}
+	
 }
